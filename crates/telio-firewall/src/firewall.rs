@@ -4,13 +4,13 @@
 use core::fmt;
 use enum_map::{Enum, EnumMap};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+use libloading::library_filename;
 use parking_lot::RwLock;
 use pnet_packet::{
     icmp::{IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Type, Icmpv6Types},
     tcp::TcpFlags,
 };
-use smallvec::ToSmallVec;
 use std::{
     ffi::c_void,
     fmt::Debug,
@@ -31,13 +31,7 @@ use crate::{
         ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
         NextLevelProtocol, Rule,
     },
-    ffi_chain::{LibfwChain, LibfwVerdict},
-    libfirewall_api::{
-        libfw_configure_chain, libfw_deinit, libfw_init, libfw_process_inbound_packet,
-        libfw_process_outbound_packet, libfw_set_log_callback,
-        libfw_trigger_stale_connection_close, LibfwFirewall,
-    },
-    log::LibfwLogLevel,
+    libfirewall::{Libfirewall, LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -167,6 +161,8 @@ pub struct FirewallConfig {
 
 /// Statefull packet-filter firewall.
 pub struct StatefullFirewall {
+    /// Firewall loaded library
+    firewall_lib: Libfirewall,
     /// Libfirewall instance
     firewall: *mut LibfwFirewall,
     /// Firewall configuration set at initialization
@@ -191,18 +187,26 @@ impl LocalInterfacesObserver for StatefullFirewall {
 impl Drop for StatefullFirewall {
     fn drop(&mut self) {
         unsafe {
-            libfw_deinit(self.firewall);
+            (self.firewall_lib.libfw_deinit)(self.firewall);
         }
     }
 }
 
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
-    pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
+    pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Result<Self, ::libloading::Error> {
+        let firewall_lib = unsafe { Libfirewall::new(library_filename("firewall"))? };
+
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
         // as we use telio logging macros inside.
-        libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+        unsafe {
+            firewall_lib
+                .libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+        }
+
+        // Create firewall instance
+        let firewall = unsafe { firewall_lib.libfw_init() };
 
         let config = FirewallConfig {
             allow_ipv6: use_ipv6,
@@ -214,8 +218,6 @@ impl StatefullFirewall {
             ip_addresses: Vec::new(),
         };
 
-        let firewall = libfw_init();
-
         let initial_local_ifs_addrs = LOCAL_ADDRS_CACHE
             .lock()
             .clone()
@@ -224,6 +226,7 @@ impl StatefullFirewall {
             .collect();
 
         let result = Self {
+            firewall_lib,
             firewall,
             config,
             local_ifs_addrs: RwLock::new(initial_local_ifs_addrs),
@@ -232,7 +235,7 @@ impl StatefullFirewall {
 
         result.apply_state(state);
 
-        result
+        Ok(result)
     }
 
     fn refresh_chain(&self) {
@@ -240,7 +243,8 @@ impl StatefullFirewall {
         let local_ifs_addrs = self.local_ifs_addrs.read().clone();
         let ffi_chain = configure_chain(&self.config, &state, &local_ifs_addrs);
         unsafe {
-            libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
+            self.firewall_lib
+                .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
     }
 }
@@ -364,7 +368,7 @@ pub(crate) fn configure_chain(
     if let Some(vpn_pk) = state.whitelist.vpn_peer {
         rules.push(Rule {
             filters: vec![Filter {
-                filter_data: FilterData::AssociatedData(Some(vpn_pk.to_smallvec())),
+                filter_data: FilterData::AssociatedData(Some(vpn_pk.to_vec())),
                 inverted: false,
             }],
             action: LibfwVerdict::LibfwVerdictAccept,
@@ -380,7 +384,7 @@ pub(crate) fn configure_chain(
     for peer in state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
         for local_net in local_network_filters.iter() {
             let mut filters = vec![Filter {
-                filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
+                filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                 inverted: false,
             }];
             filters.extend_from_slice(local_net);
@@ -407,7 +411,7 @@ pub(crate) fn configure_chain(
             rules.push(Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
+                        filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                         inverted: false,
                     },
                     dst_net_all_ports_filter(IpNet::from(*ip), false),
@@ -435,7 +439,7 @@ pub(crate) fn configure_chain(
                     filter_data: FilterData::ConntrackState(ConnectionState::Related),
                     inverted: false,
                 },
-                Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
+                dst_net_all_ports_filter(IpNet::from(*ip), false),
             ],
             action: LibfwVerdict::LibfwVerdictAccept,
         });
@@ -464,7 +468,7 @@ pub(crate) fn configure_chain(
                 rules.push(Rule {
                     filters: vec![
                         Filter {
-                            filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
+                            filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                             inverted: false,
                         },
                         Filter {
@@ -495,7 +499,7 @@ pub(crate) fn configure_chain(
     for peer in state.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
         rules.push(Rule {
             filters: vec![Filter {
-                filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
+                filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                 inverted: false,
             }],
             action: LibfwVerdict::LibfwVerdictAccept,
@@ -560,7 +564,7 @@ impl Firewall for StatefullFirewall {
         let sink_ptr = &sink as *const &mut dyn io::Write;
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                libfw_process_outbound_packet(
+                self.firewall_lib.libfw_process_outbound_packet(
                     self.firewall,
                     buffer.as_ptr(),
                     buffer.len(),
@@ -579,7 +583,7 @@ impl Firewall for StatefullFirewall {
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                libfw_process_inbound_packet(
+                self.firewall_lib.libfw_process_inbound_packet(
                     self.firewall,
                     buffer.as_ptr(),
                     buffer.len(),
@@ -595,7 +599,7 @@ impl Firewall for StatefullFirewall {
         telio_log_debug!("Constructing connetion reset packets");
         let sink_ptr = &sink as *const &mut dyn io::Write;
         unsafe {
-            libfw_trigger_stale_connection_close(
+            self.firewall_lib.libfw_trigger_stale_connection_close(
                 self.firewall,
                 pubkey.as_ptr(),
                 pubkey.len(),
@@ -604,12 +608,5 @@ impl Firewall for StatefullFirewall {
                 None,
             );
         }
-    }
-}
-
-/// The default initialization of Firewall object
-impl Default for StatefullFirewall {
-    fn default() -> Self {
-        Self::new(true, &FeatureFirewall::default())
     }
 }
