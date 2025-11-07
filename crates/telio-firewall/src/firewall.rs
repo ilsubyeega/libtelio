@@ -76,7 +76,7 @@ impl Icmp for Icmpv6Type {
 
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait Firewall {
+pub trait Firewall: Sync + Send {
     /// Applies a new firewall state and updates the chain if it differs from current state
     fn apply_state(&self, state: FirewallState);
 
