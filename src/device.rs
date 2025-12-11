@@ -1042,7 +1042,12 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
+        #[cfg(feature = "enable_firewall")]
         let firewall = StatefullFirewall::new(features.ipv6, features.firewall.clone())
+            .map_err(|err| {
+                telio_log_warn!("Failed to create StatefullFirewall: {:?}", err);
+                err
+            })
             .ok()
             .map(Arc::new);
 
