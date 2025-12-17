@@ -99,7 +99,7 @@ class SshConnection(Connection):
                         DOCKER_VM_MAP[tag]
                     ) as conn:
                         async with conn.create_process(
-                            ["nc", "-q", "5", "-w", "5", "localhost", "7100"]
+                            ["nc", "-q", "5", "-w", "1", "localhost", "7100"]
                         ).run() as nc:
                             await nc.wait_stdin_ready()
                             await nc.write_stdin("info status\n")
@@ -120,6 +120,10 @@ class SshConnection(Connection):
                             log.error(qga.get_stdout())
                             log.error(qga.get_stderr())
 
+                        # Get-EventLog might be slow. Lets ensure a simple command passes first
+                        await conn.create_process(["Get-Date"]).execute()
+
+                        # Log event logs
                         await print_event_log("Application")
                         await print_event_log("System")
                         await print_event_log("Security")
