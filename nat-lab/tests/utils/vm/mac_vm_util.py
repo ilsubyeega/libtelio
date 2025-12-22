@@ -62,7 +62,7 @@ async def copy_binaries(
 
     # libfirewall.dylib is copied separately to generate a warning instead of a hard failure
     try:
-        libfirewall_src = f"{DIST_PATH}libfirewall.dylib"
+        libfirewall_src = f"{LOCAL_UNIFFI_PATH}libfirewall.dylib"
         libfirewall_dst = f"{NATLAB_CWD}libfirewall.dylib"
         await asyncssh.scp(
             get_root_path(libfirewall_src),

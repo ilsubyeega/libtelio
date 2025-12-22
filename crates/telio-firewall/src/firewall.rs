@@ -164,8 +164,8 @@ pub struct FirewallConfig {
     pub feature: FeatureFirewall,
 }
 
-/// Statefull packet-filter firewall.
-pub struct StatefullFirewall {
+/// Stateful packet-filter firewall.
+pub struct StatefulFirewall {
     /// Firewall loaded library
     firewall_lib: Libfirewall,
     /// Libfirewall instance
@@ -179,17 +179,17 @@ pub struct StatefullFirewall {
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
-unsafe impl Sync for StatefullFirewall {}
-unsafe impl Send for StatefullFirewall {}
+unsafe impl Sync for StatefulFirewall {}
+unsafe impl Send for StatefulFirewall {}
 
-impl LocalInterfacesObserver for StatefullFirewall {
+impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self) {
         // When local interfaces change, reconfigure the firewall
         self.refresh_chain();
     }
 }
 
-impl Drop for StatefullFirewall {
+impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
             (self.firewall_lib.libfw_deinit)(self.firewall);
@@ -208,7 +208,7 @@ pub enum Error {
     FirewallInitFailed,
 }
 
-impl StatefullFirewall {
+impl StatefulFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Result<Self, Error> {
         Self::new_with_fn(use_ipv6, feature, Box::new(configure_chain))
@@ -221,8 +221,7 @@ impl StatefullFirewall {
         configure_chain_fn: ConfigureChainFn,
     ) -> Result<Self, Error> {
         let firewall_lib = unsafe {
-            Libfirewall::new(library_filename("firewall"))
-                .map_err(|ll_err| Error::LibfirewallLoadFailed(ll_err))?
+            Libfirewall::new(library_filename("firewall")).map_err(Error::LibfirewallLoadFailed)?
         };
 
         // Let's initialize libfirewall logging first.
@@ -566,7 +565,7 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
     }
 }
 
-impl Firewall for StatefullFirewall {
+impl Firewall for StatefulFirewall {
     fn apply_state(&self, new_state: FirewallState) {
         if *self.state.read() == new_state {
             return;
@@ -709,8 +708,8 @@ mod tests {
             };
 
         // Create StatefulFirewall with spy
-        let firewall: Arc<StatefullFirewall> = Arc::new(
-            StatefullFirewall::new_with_fn(true, FeatureFirewall::default(), Box::new(spy_fn))
+        let firewall: Arc<StatefulFirewall> = Arc::new(
+            StatefulFirewall::new_with_fn(true, FeatureFirewall::default(), Box::new(spy_fn))
                 .expect("Failed to create StatefulFirewall instance"),
         );
 
