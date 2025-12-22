@@ -159,8 +159,8 @@ pub struct FirewallConfig {
     pub feature: FeatureFirewall,
 }
 
-/// Statefull packet-filter firewall.
-pub struct StatefullFirewall {
+/// Stateful packet-filter firewall.
+pub struct StatefulFirewall {
     /// Firewall loaded library
     firewall_lib: Libfirewall,
     /// Libfirewall instance
@@ -173,10 +173,10 @@ pub struct StatefullFirewall {
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
-unsafe impl Sync for StatefullFirewall {}
-unsafe impl Send for StatefullFirewall {}
+unsafe impl Sync for StatefulFirewall {}
+unsafe impl Send for StatefulFirewall {}
 
-impl LocalInterfacesObserver for StatefullFirewall {
+impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self, new_addresses: Vec<StdIpAddr>) {
         *self.local_ifs_addrs.write() = new_addresses;
 
@@ -184,7 +184,7 @@ impl LocalInterfacesObserver for StatefullFirewall {
     }
 }
 
-impl Drop for StatefullFirewall {
+impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
             (self.firewall_lib.libfw_deinit)(self.firewall);
@@ -192,7 +192,7 @@ impl Drop for StatefullFirewall {
     }
 }
 
-impl StatefullFirewall {
+impl StatefulFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Result<Self, ::libloading::Error> {
         let firewall_lib = unsafe { Libfirewall::new(library_filename("firewall"))? };
@@ -541,7 +541,7 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
     }
 }
 
-impl Firewall for StatefullFirewall {
+impl Firewall for StatefulFirewall {
     fn apply_state(&self, new_state: FirewallState) {
         if *self.state.read() == new_state {
             return;
