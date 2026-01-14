@@ -330,11 +330,12 @@ pub(crate) fn configure_chain(
         });
     }
 
-    // Drop packets from UDP blacklist
+    // Reject packets from blacklist
     for blacklist_entry in &config.feature.outgoing_blacklist {
-        if blacklist_entry.protocol != IpProtocol::UDP {
-            continue;
-        }
+        let next_level_protocol = match blacklist_entry.protocol {
+            IpProtocol::UDP => NextLevelProtocol::Udp,
+            IpProtocol::TCP => NextLevelProtocol::Tcp,
+        };
         rules.push(Rule {
             filters: vec![
                 Filter {
@@ -342,28 +343,7 @@ pub(crate) fn configure_chain(
                     inverted: false,
                 },
                 Filter {
-                    filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
-                    inverted: false,
-                },
-                dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
-            ],
-            action: LibfwVerdict::LibfwVerdictReject,
-        });
-    }
-
-    // Drop packets from TCP blacklist
-    for blacklist_entry in &config.feature.outgoing_blacklist {
-        if blacklist_entry.protocol != IpProtocol::TCP {
-            continue;
-        }
-        rules.push(Rule {
-            filters: vec![
-                Filter {
-                    filter_data: FilterData::Direction(Direction::Outbound),
-                    inverted: false,
-                },
-                Filter {
-                    filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Tcp),
+                    filter_data: FilterData::NextLevelProtocol(next_level_protocol),
                     inverted: false,
                 },
                 dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
