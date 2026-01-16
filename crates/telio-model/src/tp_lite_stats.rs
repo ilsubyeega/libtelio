@@ -54,7 +54,7 @@ pub trait TpLiteStatsCallback: Send + Sync + std::fmt::Debug {
 }
 
 #[derive(Debug)]
-///
+/// Empty callback to use when feature is disabled, or as temporary value when setting new callback
 pub struct NoopCallback;
 impl TpLiteStatsCallback for NoopCallback {
     fn collect(&self, _domains: Vec<BlockedDomain>, _metrics: DnsMetrics) {}

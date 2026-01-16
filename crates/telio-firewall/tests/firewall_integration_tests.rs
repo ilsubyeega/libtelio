@@ -354,10 +354,10 @@ fn ipv6_blocked() {
         });
 
         // Should FAIL (no matching outgoing connections yet)
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src1)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src2)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src3)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src4)), false);
 
         // Should PASS (adds 1111..4444 and drops 2222)
         assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
@@ -369,15 +369,15 @@ fn ipv6_blocked() {
         assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
 
         // Should PASS (matching outgoing connections exist in LRUCache)
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), is_ipv4);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src3)), is_ipv4);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src4)), is_ipv4);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src1)), is_ipv4);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src2)), is_ipv4);
 
         // Should FAIL (has no matching outgoing connection)
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src5)), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst2, src1)), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, dst1)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src5)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst2, src1)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst1)), false);
     }
 }
 
@@ -479,28 +479,28 @@ fn firewall_whitelist() {
 
         assert!(state.whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
 
-        assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
-        assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
+        assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
+        assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
 
         state.whitelist.port_whitelist.insert(peer2, 1111);
         fw.apply_state(state.clone());
         assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 1);
 
-        assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
-        assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), true);
+        assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
+        assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), true);
 
 
-        assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src3, dst2, TcpFlags::SYN)), false);
-        assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src4, dst1, TcpFlags::SYN | TcpFlags::ACK)), true);
+        assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src3, dst2, TcpFlags::SYN)), false);
+        assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src4, dst1, TcpFlags::SYN | TcpFlags::ACK)), true);
         // only this one should be added to cache
-        assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src5, dst1, TcpFlags::SYN)), true);
+        assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src5, dst1, TcpFlags::SYN)), true);
 
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer2);
         fw.apply_state(state.clone());
         let src = src1.parse::<StdSocketAddr>().unwrap().ip().to_string();
         let dst = dst1.parse::<StdSocketAddr>().unwrap().ip().to_string();
-        assert_eq!(fw.process_inbound_packet(&peer1.0, &make_icmp(&src, &dst, IcmpTypes::EchoRequest.into())), false);
-        assert_eq!(fw.process_inbound_packet(&peer2.0, &make_icmp(&src, &dst, IcmpTypes::EchoRequest.into())), true);
+        assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_icmp(&src, &dst, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_icmp(&src, &dst, IcmpTypes::EchoRequest.into())), true);
     }
 }
 
@@ -542,25 +542,25 @@ fn firewall_vpn_peer() {
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
 
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, synack)), false);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src2, dst1, synack)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, synack)), false);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, synack)), false);
 
             state.whitelist.vpn_peer = Some(peer1);
             fw.apply_state(state.clone());
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), true);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), true);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
 
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, syn)), true);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, syn)), true);
             assert_eq!(fw.process_outbound_packet_sink(&peer1.0, &make_tcp(dst1, src1, synack)), true);
 
             state.whitelist.vpn_peer = None;
             fw.apply_state(state.clone());
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, 0)), true);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src2, dst1, 0)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, 0)), true);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, 0)), false);
         }
 }
 
@@ -590,23 +590,23 @@ fn firewall_whitelist_change_icmp() {
 
         let mut state = fw.get_state();
         let peer = make_random_peer();
-        assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoReply.into())), false);
 
-        assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoRequest.into())), false);
         if *is_v4 {
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::Timestamp.into())), false);
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::InformationRequest.into())), false);
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::AddressMaskRequest.into())), false);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::Timestamp.into())), false);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::InformationRequest.into())), false);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::AddressMaskRequest.into())), false);
         }
 
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoRequest.into())), true);
-        assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoReply.into())), true);
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoRequest.into())), true);
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoReply.into())), true);
         if *is_v4 {
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::Timestamp.into())), true);
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::InformationRequest.into())), true);
-            assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp4(them, us, IcmpTypes::AddressMaskRequest.into())), true);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::Timestamp.into())), true);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::InformationRequest.into())), true);
+            assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp4(them, us, IcmpTypes::AddressMaskRequest.into())), true);
         }
     }
 }
@@ -630,17 +630,17 @@ fn firewall_whitelist_change_udp_allow() {
 
         let them_peer = make_random_peer();
 
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), false);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about this test
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_udp(us, them)), true);
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
 
         // Should PASS because we started the session
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone()); // NOTE: also has no impact on this test
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
     }
 }
 
@@ -664,14 +664,14 @@ fn firewall_whitelist_change_udp_block() {
 
         state.whitelist.port_whitelist.insert(them_peer, 1111);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_udp(us, them)), true);
 
         // The already started connection should still work
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
     }
 }
 
@@ -693,16 +693,16 @@ fn firewall_whitelist_change_tcp_allow() {
 
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about the test
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN)), true);
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
         // Should PASS because we started the session
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
     }
 
 }
@@ -723,18 +723,18 @@ fn firewall_whitelist_change_tcp_block() {
 
         let them_peer = make_random_peer();
 
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN)), false);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN)), false);
         state.whitelist.port_whitelist.insert(them_peer, 1111);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN)), true);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
         // Firewall allows already established connections
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
     }
 }
 
@@ -780,25 +780,25 @@ fn firewall_whitelist_peer() {
             let src2_ip = src2.parse::<StdSocketAddr>().unwrap().ip().to_string();
             let dst_ip = dst.parse::<StdSocketAddr>().unwrap().ip().to_string();
 
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, dst,)), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(src2, dst, TcpFlags::PSH)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst,)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(src2, dst, TcpFlags::PSH)), false);
 
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert((&make_peer()).into());
             fw.apply_state(state.clone());
             assert_eq!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 1);
 
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, dst,)), true);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), true);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(src2, dst, TcpFlags::PSH)), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst,)), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(src2, dst, TcpFlags::PSH)), true);
 
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].remove(&(&make_peer()).into());
             fw.apply_state(state.clone());
             assert_eq!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 0);
 
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, dst,)), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(src2, dst, TcpFlags::PSH)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst,)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(src2, dst, TcpFlags::PSH)), false);
         }
 }
 
@@ -854,8 +854,10 @@ fn firewall_test_permissions() {
         assert!(state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].is_empty());
 
         // No permissions. Incoming packet should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, local_dst,)));
+        assert!(
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, local_dst, TcpFlags::PSH))
+        );
 
         // Allow incoming connection
         state.whitelist.peer_whitelists[Permissions::IncomingConnections]
@@ -867,16 +869,21 @@ fn firewall_test_permissions() {
         );
 
         // Packet destined for local node
-        assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-        assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
-        // Packet destined for foreign node but within local area. Should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
-        // Packet destined for totally external node. Should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
+        assert!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, local_dst,)));
         assert!(
-            !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH))
+            fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, local_dst, TcpFlags::PSH))
         );
+        // Packet destined for foreign node but within local area. Should FAIL
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, area_dst,)));
+        assert!(
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, area_dst, TcpFlags::PSH))
+        );
+        // Packet destined for totally external node. Should FAIL
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(
+            &make_peer(),
+            &mut make_tcp(src1, external_dst, TcpFlags::PSH)
+        ));
 
         // Allow local area connections
         state.whitelist.peer_whitelists[Permissions::LocalAreaConnections]
@@ -887,13 +894,16 @@ fn firewall_test_permissions() {
             1
         );
         // Packet destined for foreign node but within local area
-        assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-        assert!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
-        // Packet destined for totally external node. Should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
+        assert!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, area_dst,)));
         assert!(
-            !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH))
+            fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, area_dst, TcpFlags::PSH))
         );
+        // Packet destined for totally external node. Should FAIL
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(
+            &make_peer(),
+            &mut make_tcp(src1, external_dst, TcpFlags::PSH)
+        ));
 
         // Allow routing permissiongs but no local area connection
         state.whitelist.peer_whitelists[Permissions::LocalAreaConnections]
@@ -912,13 +922,16 @@ fn firewall_test_permissions() {
             1
         );
         // Packet destined for foreign node but within local area. Should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
-        // Packet destined for totally external node
-        assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, area_dst,)));
         assert!(
-            fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH))
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, area_dst, TcpFlags::PSH))
         );
+        // Packet destined for totally external node
+        assert!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, external_dst,)));
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &mut make_tcp(src1, external_dst, TcpFlags::PSH)
+        ));
 
         // Allow only routing
         state.whitelist.peer_whitelists[Permissions::IncomingConnections]
@@ -930,13 +943,16 @@ fn firewall_test_permissions() {
         );
 
         // Packet destined for local node. Should FAIL
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
-        // Packet destined for totally external node
-        assert!(fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, local_dst,)));
         assert!(
-            fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH))
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, local_dst, TcpFlags::PSH))
         );
+        // Packet destined for totally external node
+        assert!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, external_dst,)));
+        assert!(fw.process_inbound_packet(
+            &make_peer(),
+            &mut make_tcp(src1, external_dst, TcpFlags::PSH)
+        ));
 
         state.whitelist.peer_whitelists[Permissions::RoutingConnections]
             .remove(&(&make_peer()).into());
@@ -948,16 +964,21 @@ fn firewall_test_permissions() {
 
         // All packets should FAIL
         // Packet destined for local node
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, local_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, local_dst, TcpFlags::PSH)));
-        // Packet destined for foreign node but within local area
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, area_dst,)));
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_tcp(src1, area_dst, TcpFlags::PSH)));
-        // Packet destined for totally external node
-        assert!(!fw.process_inbound_packet(&make_peer(), &make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, local_dst,)));
         assert!(
-            !fw.process_inbound_packet(&make_peer(), &make_tcp(src1, external_dst, TcpFlags::PSH))
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, local_dst, TcpFlags::PSH))
         );
+        // Packet destined for foreign node but within local area
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, area_dst,)));
+        assert!(
+            !fw.process_inbound_packet(&make_peer(), &mut make_tcp(src1, area_dst, TcpFlags::PSH))
+        );
+        // Packet destined for totally external node
+        assert!(!fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, external_dst,)));
+        assert!(!fw.process_inbound_packet(
+            &make_peer(),
+            &mut make_tcp(src1, external_dst, TcpFlags::PSH)
+        ));
     }
 }
 
@@ -999,28 +1020,28 @@ fn firewall_whitelist_port() {
         assert!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
         assert!(fw.get_state().whitelist.port_whitelist.is_empty());
 
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
 
         state.whitelist.port_whitelist.insert(PublicKey(make_peer()), FILE_SEND_PORT);
         fw.apply_state(state.clone());
         assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 1);
 
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
 
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), true);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), true);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), true);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), true);
 
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(&test_input.src_socket(11111), &test_input.dst_socket(12345))), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(12345), TcpFlags::PSH)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(12345))), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(12345), TcpFlags::PSH)), false);
 
         state.whitelist.port_whitelist.remove(&PublicKey(make_peer()));
         fw.apply_state(state.clone());
         assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 0);
 
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
     }
 }
