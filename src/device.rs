@@ -2112,16 +2112,19 @@ impl Runtime {
         config: TpLiteStatsOptions,
         collect_stats_cb: Box<Box<dyn TpLiteStatsCallback>>,
     ) -> Result {
+        #[cfg(feature = "enable_firewall")]
         match &self.entities.firewall {
             Some(fw) => fw
                 .enable_tp_lite_stats_collection(config, collect_stats_cb)
                 .map_err(|_| Error::FirewallDisabled), // TODO(mathiaspeters): Fix error type
             None => Err(Error::FirewallDisabled),
         }
+        Ok(())
     }
 
     /// Disable collection of TP-Lite stats
     pub fn disable_tp_lite_stats_collection(&self) -> Result {
+        #[cfg(feature = "enable_firewall")]
         if let Some(fw) = &self.entities.firewall {
             fw.disable_tp_lite_stats_collection();
         }

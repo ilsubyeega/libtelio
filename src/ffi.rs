@@ -8,7 +8,6 @@ use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnet::IpNet;
 use rand::Rng;
 use telio_crypto::{PublicKey, SecretKey};
-use telio_firewall::tp_lite_stats::{NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions};
 use telio_wg::AdapterType;
 use tracing::{error, trace};
 
