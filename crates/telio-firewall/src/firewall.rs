@@ -12,7 +12,7 @@ use pnet_packet::{
     tcp::TcpFlags,
 };
 use std::{
-    ffi::c_void,
+    ffi::{c_void, CString},
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
@@ -32,6 +32,7 @@ use crate::{
         NextLevelProtocol, Rule,
     },
     libfirewall::{Libfirewall, LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
+    tp_lite_stats::{collect_stats, CallbackManager, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -92,7 +93,7 @@ pub trait Firewall: Sync + Send {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool;
 
     /// Creates packets that are supposed to kill the existing connections.
     /// The end goal here is to fore the client app sockets to reconnect.
@@ -170,6 +171,8 @@ pub struct StatefulFirewall {
     /// Current firewall state
     state: RwLock<FirewallState>,
     local_ifs_addrs: RwLock<Vec<StdIpAddr>>,
+    /// Callback for TP-Lite stats
+    tp_lite_stats_cb: CallbackManager,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -231,6 +234,7 @@ impl StatefulFirewall {
             config,
             local_ifs_addrs: RwLock::new(initial_local_ifs_addrs),
             state: RwLock::new(state.clone()),
+            tp_lite_stats_cb: CallbackManager::new(),
         };
 
         result.apply_state(state);
@@ -246,6 +250,42 @@ impl StatefulFirewall {
             self.firewall_lib
                 .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
+    }
+
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        config: TpLiteStatsOptions,
+        mut collect_stats_cb: Box<Box<dyn TpLiteStatsCallback>>,
+    ) -> Result<(), String> // TODO(mathiaspeters)
+    {
+        let config = serde_json::to_string(&config).map_err(|_| "".to_owned())?;
+        let config = CString::new(config).map_err(|_| "".to_owned())?;
+        {
+            let mut cb = self.tp_lite_stats_cb.callback.write();
+            std::mem::swap(&mut collect_stats_cb, &mut *cb);
+        }
+        unsafe {
+            self.firewall_lib.libfw_enable_tp_lite_stats_collection(
+                self.firewall,
+                config.as_ptr(),
+                self.tp_lite_stats_cb.as_raw_ptr(),
+                Some(collect_stats),
+            );
+        };
+        Ok(())
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) {
+        unsafe {
+            self.firewall_lib
+                .libfw_disable_tp_lite_stats_collection(self.firewall)
+        };
     }
 }
 
@@ -580,12 +620,12 @@ impl Firewall for StatefulFirewall {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool {
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
                 self.firewall_lib.libfw_process_inbound_packet(
                     self.firewall,
-                    buffer.as_ptr(),
+                    buffer.as_mut_ptr(),
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),

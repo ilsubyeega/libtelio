@@ -37,6 +37,8 @@ pub enum TelioError {
     AlreadyStarted,
     #[error("NotStarted")]
     NotStarted,
+    #[error("FirewallDisabled")]
+    FirewallDisabled,
 }
 
 #[derive(Copy, Clone, Debug)]

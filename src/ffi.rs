@@ -8,6 +8,7 @@ use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnet::IpNet;
 use rand::Rng;
 use telio_crypto::{PublicKey, SecretKey};
+use telio_firewall::tp_lite_stats::{NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions};
 use telio_wg::AdapterType;
 use tracing::{error, trace};
 
@@ -309,9 +310,9 @@ impl Telio {
         );
     }
 
-    fn device_op<F, R>(&self, break_on_lock_error: bool, op: F) -> FfiResult<R>
+    fn device_op<F, R>(&self, break_on_lock_error: bool, mut op: F) -> FfiResult<R>
     where
-        F: Fn(&mut Device) -> FfiResult<R>,
+        F: FnMut(&mut Device) -> FfiResult<R>,
     {
         let mut dev = match self.inner.lock() {
             Ok(dev) => dev,
@@ -894,6 +895,35 @@ impl Telio {
             })
         })
     }
+
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        config: TpLiteStatsOptions,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+    ) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::enable_tp_lite_stats_collection entry with instance id: {}.",
+            self.id
+        );
+        let mut collect_stats_cb = Box::new(collect_stats_cb);
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                let config = config.clone();
+                let mut cb: Box<Box<dyn TpLiteStatsCallback>> = Box::new(Box::new(NoopCallback));
+                std::mem::swap(&mut collect_stats_cb, &mut cb);
+                dev.enable_tp_lite_stats_collection(config, cb)
+                    .log_result("Telio::enable_tp_lite_stats_collection")
+            })
+        })
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) {}
 
     pub fn get_status_map(&self) -> Vec<Node> {
         trace!("acquiring dev lock");

@@ -66,6 +66,7 @@ pub enum LibfwResult {
     LibfwErrorNullPointer = 8,
     LibfwErrorNotImplemented = 9,
     LibfwErrorInvalidChain = 10,
+    LibfwErrorInvalidConfig = 11,
 }
 
 #[repr(u32)]
@@ -84,6 +85,52 @@ pub struct LibfwFirewall {
 #[doc = " A callback type for providing logs from\n library into VPN protocol implementation\n\n @level - log level as defined in @LIBFW_LOG_LEVEL\n @log_line - zero-terminated log line\n"]
 pub type LibfwLogCallback = ::std::option::Option<
     unsafe extern "C" fn(level: LibfwLogLevel, log_line: *const ::std::os::raw::c_char),
+>;
+#[doc = " Information about a domain blocked by TP-Lite\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwBlockedDomain {
+    pub domain_name: *const ::std::os::raw::c_char,
+    pub record_type: u16,
+    pub timestamp: u64,
+    pub category: *const ::std::os::raw::c_char,
+}
+#[doc = " Count of some \"thing\". Intended to hold counts for record and response types\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwRRTypeCount_u16 {
+    pub rr_type: u16,
+    pub count: u32,
+}
+#[doc = " Count of some \"thing\". Intended to hold counts for record and response types\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwRRTypeCount_u8 {
+    pub rr_type: u8,
+    pub count: u32,
+}
+#[doc = " General metrics about DNS traffic\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwDnsMetrics {
+    pub num_requests: u32,
+    pub num_responses: u32,
+    pub num_malformed_requests: u32,
+    pub num_malformed_responses: u32,
+    pub num_cache_hits: u32,
+    pub record_type_distribution: *const LibfwRRTypeCount_u16,
+    pub num_record_types: usize,
+    pub response_code_distribution: *const LibfwRRTypeCount_u8,
+    pub num_response_codes: usize,
+}
+#[doc = " Callback used by integrating libraries/apps for getting the collected TP-Lite stats\n\n @param data - A pointer meant to provide facilities for callback implementors\n               to add context information to the callback itself. If integrators\n               of libfirewall does not need context information - `null` may be passed.\n @param domains - list of domains that were blocked by TP-Lite DNS servers\n @param num_blocked_domains - number of elements in @ref domains\n @param metrics - general metrics about DNS traffic\n"]
+pub type LibfwCollectTpLiteStatsCallback = ::std::option::Option<
+    unsafe extern "C" fn(
+        data: *mut ::std::os::raw::c_void,
+        domains: *const LibfwBlockedDomain,
+        num_blocked_domains: usize,
+        metrics: LibfwDnsMetrics,
+    ),
 >;
 #[doc = " Filter by the associate data\n"]
 #[repr(C)]
@@ -190,6 +237,13 @@ pub struct Libfirewall {
     pub libfw_set_log_callback:
         unsafe extern "C" fn(min_log_level: LibfwLogLevel, log_cb: LibfwLogCallback),
     pub libfw_init: unsafe extern "C" fn() -> *mut LibfwFirewall,
+    pub libfw_enable_tp_lite_stats_collection: unsafe extern "C" fn(
+        firewall: *mut LibfwFirewall,
+        config: *const ::std::os::raw::c_char,
+        collect_stats_cb_data: *mut ::std::os::raw::c_void,
+        collect_stats_cb: LibfwCollectTpLiteStatsCallback,
+    ) -> LibfwResult,
+    pub libfw_disable_tp_lite_stats_collection: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
     pub libfw_configure_chain:
         unsafe extern "C" fn(fw: *mut LibfwFirewall, ffi_chain: *const LibfwChain) -> LibfwResult,
     pub libfw_trigger_stale_connection_close: unsafe extern "C" fn(
@@ -202,7 +256,7 @@ pub struct Libfirewall {
     ) -> LibfwResult,
     pub libfw_process_inbound_packet: unsafe extern "C" fn(
         firewall: *mut LibfwFirewall,
-        packet: *const u8,
+        packet: *mut u8,
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
@@ -215,8 +269,8 @@ pub struct Libfirewall {
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
-        _inject_packet_cb_data: *mut ::std::os::raw::c_void,
-        _inject_inbound_packet_cb: LibfwInjectPacketCallback,
+        inject_packet_cb_data: *mut ::std::os::raw::c_void,
+        inject_inbound_packet_cb: LibfwInjectPacketCallback,
     ) -> LibfwVerdict,
     pub libfw_deinit: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
 }
@@ -235,6 +289,12 @@ impl Libfirewall {
         let __library = library.into();
         let libfw_set_log_callback = __library.get(b"libfw_set_log_callback\0").map(|sym| *sym)?;
         let libfw_init = __library.get(b"libfw_init\0").map(|sym| *sym)?;
+        let libfw_enable_tp_lite_stats_collection = __library
+            .get(b"libfw_enable_tp_lite_stats_collection\0")
+            .map(|sym| *sym)?;
+        let libfw_disable_tp_lite_stats_collection = __library
+            .get(b"libfw_disable_tp_lite_stats_collection\0")
+            .map(|sym| *sym)?;
         let libfw_configure_chain = __library.get(b"libfw_configure_chain\0").map(|sym| *sym)?;
         let libfw_trigger_stale_connection_close = __library
             .get(b"libfw_trigger_stale_connection_close\0")
@@ -250,6 +310,8 @@ impl Libfirewall {
             __library,
             libfw_set_log_callback,
             libfw_init,
+            libfw_enable_tp_lite_stats_collection,
+            libfw_disable_tp_lite_stats_collection,
             libfw_configure_chain,
             libfw_trigger_stale_connection_close,
             libfw_process_inbound_packet,
@@ -268,6 +330,25 @@ impl Libfirewall {
     #[doc = " A function used to initialize libfirewall instance\n\n @return pointer to initialized fw instance on success, NULL on failure\n"]
     pub unsafe fn libfw_init(&self) -> *mut LibfwFirewall {
         (self.libfw_init)()
+    }
+    #[doc = " Configure libfirewall to collect stats about domains blocked by TP-Lite\n Providing no IPs will disable the collection of TP-Lite stats\n\n @param firewall - pointer returned by @ref libfw_init\n @param config - json string containing config options. The valid fields are:\n                     - dns_server_ips: list of IP addresses as strings\n @param collect_stats_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param collect_stats_cb - callback through which the collected stats are passed\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`.\n\n The user must ensure that the collect_stats_cb_data pointer and\n collect_stats_cb function pointer lives as long as the firewall instance,\n or until libfw_disable_tp_lite_stats_collection is called"]
+    pub unsafe fn libfw_enable_tp_lite_stats_collection(
+        &self,
+        firewall: *mut LibfwFirewall,
+        config: *const ::std::os::raw::c_char,
+        collect_stats_cb_data: *mut ::std::os::raw::c_void,
+        collect_stats_cb: LibfwCollectTpLiteStatsCallback,
+    ) -> LibfwResult {
+        (self.libfw_enable_tp_lite_stats_collection)(
+            firewall,
+            config,
+            collect_stats_cb_data,
+            collect_stats_cb,
+        )
+    }
+    #[doc = " Deactivate TP-Lite stats collection by libfirewall\n\n @param firewall - pointer returned by @ref libfw_init\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
+    pub unsafe fn libfw_disable_tp_lite_stats_collection(&self, firewall: *mut LibfwFirewall) {
+        (self.libfw_disable_tp_lite_stats_collection)(firewall)
     }
     #[doc = " Configures chain of rules for the firewall to follow\n\n @param fw - pointer returned by @ref libfw_init\n @param chain - chain of the firewall rules\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` and also dereferences `ffi_chain` pointer\n which should point to a valid LibfwChain struct.\n"]
     pub unsafe fn libfw_configure_chain(
@@ -300,7 +381,7 @@ impl Libfirewall {
     pub unsafe fn libfw_process_inbound_packet(
         &self,
         firewall: *mut LibfwFirewall,
-        packet: *const u8,
+        packet: *mut u8,
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
@@ -325,8 +406,8 @@ impl Libfirewall {
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
-        _inject_packet_cb_data: *mut ::std::os::raw::c_void,
-        _inject_inbound_packet_cb: LibfwInjectPacketCallback,
+        inject_packet_cb_data: *mut ::std::os::raw::c_void,
+        inject_inbound_packet_cb: LibfwInjectPacketCallback,
     ) -> LibfwVerdict {
         (self.libfw_process_outbound_packet)(
             firewall,
@@ -334,8 +415,8 @@ impl Libfirewall {
             packet_len,
             associated_data,
             associated_data_len,
-            _inject_packet_cb_data,
-            _inject_inbound_packet_cb,
+            inject_packet_cb_data,
+            inject_inbound_packet_cb,
         )
     }
     #[doc = " Destructs firewall instance.\n\n After this function returns it is guaranteed that no callbacks will\n be called anymore.\n\n @param fw - pointer returned by @ref libfw_init\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
