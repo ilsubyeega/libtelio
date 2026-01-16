@@ -63,31 +63,31 @@ impl TpLiteStatsCallback for NoopCallback {
 /// LibfwDnsMetrics but with nicer types
 #[derive(Debug)]
 pub struct DnsMetrics {
-    ///
+    /// Total number of DNS requests
     pub num_requests: u32,
-    ///
+    /// Total number of DNS responses
     pub num_responses: u32,
-    ///
+    /// Number of malformed DNS requests
     pub num_malformed_requests: u32,
-    ///
+    /// Number of malformed DNS responses
     pub num_malformed_responses: u32,
-    ///
+    /// How many responses were served from the libfirewall DNS cache
     pub num_cache_hits: u32,
-    ///
+    /// How many DNS requests there were grouped by record type
     pub record_type_distribution: HashMap<u16, u32>,
-    ///
+    /// How many DNS responses there were grouped by response code
     pub response_type_distribution: HashMap<u8, u32>,
 }
 
 /// LibfwBlockedDomain but with nicer types
 #[derive(Debug)]
 pub struct BlockedDomain {
-    ///
+    /// The domain name that was blocked
     pub domain_name: String,
-    ///
+    /// The record type that was blocked
     pub record_type: u16,
-    ///
+    /// Timestamp of the response
     pub timestamp: u64,
-    ///
+    /// Which blocking category the domain falls under
     pub category: String,
 }

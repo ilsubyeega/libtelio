@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 #[cfg(feature = "enable_firewall")]
 use telio_firewall::firewall::{Firewall, StatefulFirewall};
-use telio_firewall::tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions};
 use telio_lana::init_lana;
 #[cfg(feature = "enable_firewall")]
 use telio_network_monitors::monitor::LocalInterfacesObserver;
@@ -95,6 +94,7 @@ use telio_model::{
     event::{Event, Set},
     features::{FeaturePersistentKeepalive, Features, PathType},
     mesh::{ExitNode, LinkState, Node, NodeState},
+    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
     validation::validate_nickname,
     EndpointMap,
 };
@@ -2119,6 +2119,7 @@ impl Runtime {
                 .map_err(|_| Error::FirewallDisabled), // TODO(mathiaspeters): Fix error type
             None => Err(Error::FirewallDisabled),
         }
+        #[cfg(not(feature = "enable_firewall"))]
         Ok(())
     }
 

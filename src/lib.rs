@@ -72,13 +72,13 @@ mod uniffi_libtelio {
 
     use base64::prelude::*;
     use nat_detect::NatType;
-    use telio_firewall::tp_lite_stats::{
-        BlockedDomain, DnsMetrics, TpLiteStatsCallback, TpLiteStatsOptions,
-    };
     use telio_model::config::*;
     use telio_model::event::{ErrorCode, ErrorLevel, Event};
     use telio_model::features::*;
     use telio_model::mesh::*;
+    use telio_model::tp_lite_stats::{
+        BlockedDomain, DnsMetrics, TpLiteStatsCallback, TpLiteStatsOptions,
+    };
     use telio_utils::{Hidden, HiddenString};
 
     type ErrorEvent = telio_model::event::Error;

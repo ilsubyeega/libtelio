@@ -34,6 +34,7 @@ use telio_model::{
     event::*,
     features::Features,
     mesh::{ExitNode, Node},
+    tp_lite_stats::{NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 
 // debug tools

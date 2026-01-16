@@ -18,7 +18,10 @@ use std::{
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
 };
 
-use telio_model::features::{FeatureFirewall, IpProtocol};
+use telio_model::{
+    features::{FeatureFirewall, IpProtocol},
+    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
+};
 use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
@@ -32,7 +35,7 @@ use crate::{
         NextLevelProtocol, Rule,
     },
     libfirewall::{Libfirewall, LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
-    tp_lite_stats::{collect_stats, CallbackManager, TpLiteStatsCallback, TpLiteStatsOptions},
+    tp_lite_stats::{collect_stats, CallbackManager},
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
