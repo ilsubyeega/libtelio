@@ -904,17 +904,16 @@ impl Telio {
     pub fn enable_tp_lite_stats_collection(
         &self,
         config: TpLiteStatsOptions,
-        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+        mut collect_stats_cb: Box<dyn TpLiteStatsCallback>,
     ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::enable_tp_lite_stats_collection entry with instance id: {}.",
             self.id
         );
-        let mut collect_stats_cb = Box::new(collect_stats_cb);
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 let config = config.clone();
-                let mut cb: Box<Box<dyn TpLiteStatsCallback>> = Box::new(Box::new(NoopCallback));
+                let mut cb: Box<dyn TpLiteStatsCallback> = Box::new(NoopCallback);
                 std::mem::swap(&mut collect_stats_cb, &mut cb);
                 dev.enable_tp_lite_stats_collection(config, cb)
                     .log_result("Telio::enable_tp_lite_stats_collection")

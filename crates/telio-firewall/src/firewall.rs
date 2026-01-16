@@ -263,14 +263,15 @@ impl StatefulFirewall {
     pub fn enable_tp_lite_stats_collection(
         &self,
         config: TpLiteStatsOptions,
-        mut collect_stats_cb: Box<Box<dyn TpLiteStatsCallback>>,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
     ) -> Result<(), String> // TODO(mathiaspeters)
     {
         let config = serde_json::to_string(&config).map_err(|_| "".to_owned())?;
         let config = CString::new(config).map_err(|_| "".to_owned())?;
         {
+            let mut old_cb = Box::new(collect_stats_cb);
             let mut cb = self.tp_lite_stats_cb.callback.write();
-            std::mem::swap(&mut collect_stats_cb, &mut *cb);
+            std::mem::swap(&mut old_cb, &mut *cb);
         }
         unsafe {
             self.firewall_lib.libfw_enable_tp_lite_stats_collection(

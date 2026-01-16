@@ -749,7 +749,7 @@ impl Device {
     pub fn enable_tp_lite_stats_collection(
         &self,
         config: TpLiteStatsOptions,
-        collect_stats_cb: Box<Box<dyn TpLiteStatsCallback>>,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
@@ -2109,8 +2109,8 @@ impl Runtime {
     /// Passing empty list of IPs will disable the collection of TP-Lite stats
     pub fn enable_tp_lite_stats_collection(
         &self,
-        config: TpLiteStatsOptions,
-        collect_stats_cb: Box<Box<dyn TpLiteStatsCallback>>,
+        #[allow(unused_variables)] config: TpLiteStatsOptions,
+        #[allow(unused_variables)] collect_stats_cb: Box<dyn TpLiteStatsCallback>,
     ) -> Result {
         #[cfg(feature = "enable_firewall")]
         match &self.entities.firewall {
