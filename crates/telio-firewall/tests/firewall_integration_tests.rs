@@ -1045,3 +1045,40 @@ fn firewall_whitelist_port() {
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
     }
 }
+
+mod tp_lite_stats {
+    use telio_model::tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions};
+
+    use super::*;
+
+    fn make_dns_request() -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn make_dns_response() -> Vec<u8> {
+        Vec::new()
+    }
+
+    #[test]
+    fn tp_lite_stats_enabled() {
+        let fw = StatefulFirewall::new(true, &FeatureFirewall::default())
+            .expect("Failed to load libfirewall");
+        let config = TpLiteStatsOptions {
+            dns_server_ips: vec![IpAddr::from([1, 1, 1, 1])],
+            ..Default::default()
+        };
+        #[derive(Debug)]
+        struct Callback;
+        impl TpLiteStatsCallback for Callback {
+            fn collect(
+                &self,
+                domains: Vec<telio_model::tp_lite_stats::BlockedDomain>,
+                metrics: telio_model::tp_lite_stats::DnsMetrics,
+            ) {
+                // temp no-op
+            }
+        }
+        fw.enable_tp_lite_stats_collection(config, Box::new(Callback))
+            .unwrap();
+    }
+}
