@@ -16,7 +16,13 @@ from tests.helpers import (
     wait_for_interface_state,
     wait_for_log_line,
 )
-from tests.nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
+from tests.nordvpnlite import (
+    NordVpnLite,
+    Config,
+    IfcConfigName,
+    Paths,
+    nordvpnlite_configs,
+)
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
@@ -27,6 +33,7 @@ from tests.utils.openwrt import (
 )
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
+from typing import Optional
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = "10.0.0.0"
@@ -106,8 +113,9 @@ async def check_gateway_and_client_ip(
 
 
 async def setup_openwrt_test_environment(
-    country_config: IfcConfigType,
+    country_config: IfcConfigName,
     exit_stack: AsyncExitStack,
+    config_path: Optional[Path] = None,
 ) -> tuple[Connection, Connection, NordVpnLite]:
     """
     Set up the OpenWrt test environment.
@@ -118,10 +126,12 @@ async def setup_openwrt_test_environment(
     mock data for a third-party API used during tests.
 
     Args:
-        country_config (IfcConfigType):
+        country_config (IfcConfigName):
             Country config for which the OpenWrt environment
             should be configured.
         exit_stack (AsyncExitStack)
+        config_path (Optional[Path], optional):
+            Custom path to save nordvpnlite config file. Defaults to None.
 
     Returns:
         tuple[Connection, Connection, VpnLite]:
@@ -139,20 +149,26 @@ async def setup_openwrt_test_environment(
     # printing networking state before test execution
     await print_network_state(gateway_connection)
 
-    await gateway_connection.create_process(
-        ["mkdir", "-p", "/etc/nordvpnlite"]
-    ).execute()
-    await gateway_connection.upload_file(
-        f"data/nordvpnlite/{country_config.value}",
-        f"/etc/nordvpnlite/{country_config.value}",
+    paths = Paths(exec_path=Path("nordvpnlite"))
+    config = Config(
+        nordvpnlite_configs[country_config],
+        country_config,
+        paths=paths,
     )
 
-    config_path = Paths(exec_path=Path("nordvpnlite"))
-    nordvpnlite = NordVpnLite(
-        gateway_connection,
-        exit_stack,
-        config=Config(country_config, paths=config_path),
-    )
+    if config_path:
+        nordvpnlite = NordVpnLite(
+            connection=gateway_connection,
+            exit_stack=exit_stack,
+            config=config,
+            config_path=config_path,
+        )
+    else:
+        nordvpnlite = NordVpnLite(
+            connection=gateway_connection,
+            exit_stack=exit_stack,
+            config=config,
+        )
     await nordvpnlite.request_credentials_from_core()
     return client_connection, gateway_connection, nordvpnlite
 
@@ -162,10 +178,10 @@ async def setup_openwrt_test_environment(
 @pytest.mark.parametrize(
     "openwrt_config",
     [
-        IfcConfigType.VPN_OPENWRT_UCI_PL,
+        IfcConfigName.VPN_OPENWRT_UCI_PL,
     ],
 )
-async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
+async def test_openwrt_vpn_connection(openwrt_config: IfcConfigName) -> None:
     """
     Connect to vpn from OpenWRT router
 
@@ -250,7 +266,7 @@ async def test_openwrt_ip_leaks() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                IfcConfigName.VPN_OPENWRT_UCI_PL, exit_stack
             )
         )
         photo_album_connection = await exit_stack.enter_async_context(
@@ -334,7 +350,7 @@ async def test_openwrt_simulate_network_down() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                IfcConfigName.VPN_OPENWRT_UCI_PL, exit_stack
             )
         )
 
@@ -386,7 +402,7 @@ async def test_openwrt_vpn_reconnect() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                IfcConfigName.VPN_OPENWRT_UCI_PL, exit_stack
             )
         )
 
@@ -442,7 +458,7 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                IfcConfigName.VPN_OPENWRT_UCI_PL, exit_stack
             )
         )
 
@@ -463,16 +479,15 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             gateway_connection, client_connection, OPENWRT_GW_WAN_IP
         )
 
-        # uploading config for the second country
-        await gateway_connection.upload_file(
-            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
-            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
-        )
         config_path = Paths(exec_path=Path("nordvpnlite"))
         nordvpnlite_de = NordVpnLite(
             gateway_connection,
             exit_stack,
-            config=Config(IfcConfigType.VPN_OPENWRT_UCI_DE, paths=config_path),
+            config=Config(
+                nordvpnlite_configs[IfcConfigName.VPN_OPENWRT_UCI_DE],
+                IfcConfigName.VPN_OPENWRT_UCI_DE,
+                paths=config_path,
+            ),
         )
         async with nordvpnlite_de.start():
             log.debug("Reconnect to VPN DE...")
@@ -507,17 +522,18 @@ async def test_openwrt_router_restart() -> None:
     try:
         async with AsyncExitStack() as exit_stack:
             # setting up openwrt environment
+            # In reboot scenario we need to use default config path as
+            # /etc/nordvpnlite/config.json is persisted across reboots
             client_connection, gateway_connection, nordvpnlite = (
                 await setup_openwrt_test_environment(
-                    IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                    IfcConfigName.VPN_OPENWRT_UCI_PL,
+                    exit_stack,
+                    config_path=Path("/etc/nordvpnlite/config.json"),
                 )
             )
-            # uploading custom config to default config.json as after reboot
-            # nordvpnlite is trying to start with default config
-            await gateway_connection.upload_file(
-                f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
-                f"/etc/nordvpnlite/{IfcConfigType.DEFAULT.value}",
-            )
+            await gateway_connection.create_process(
+                ["mkdir", "-p", "/etc/nordvpnlite"]
+            ).execute()
 
             # start nordvpnlite without a cleanup as we want to validate vpn connection restore
             async with nordvpnlite.start(cleanup=False):
@@ -565,7 +581,9 @@ async def test_openwrt_router_restart() -> None:
         nordvpnlite_after_reboot = NordVpnLite(
             gateway_connection_after_reboot,
             exit_stack,
-            config=Config(IfcConfigType.DEFAULT, paths=config_path),
+            config=Config(
+                nordvpnlite_configs[IfcConfigName.DEFAULT], paths=config_path
+            ),
         )
         # wrap into try/finally to always execute cleanup code
         try:

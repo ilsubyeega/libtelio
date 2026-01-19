@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from tests.config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from tests.helpers import setup_connections
-from tests.nordvpnlite import NordVpnLite, IfcConfigType
+from tests.nordvpnlite import NordVpnLite, IfcConfigName, nordvpnlite_configs
 from tests.utils import stun
 from tests.utils.connection import ConnectionTag
 from tests.utils.logger import log
@@ -19,7 +19,11 @@ from tests.utils.process.process import ProcessExecError
 )
 async def test_nordvpnlite_start(no_detach) -> None:
     async with AsyncExitStack() as exit_stack:
-        nordvpnlite = await NordVpnLite.new(exit_stack, no_detach=no_detach)
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=nordvpnlite_configs[IfcConfigName.MANUAL],
+            no_detach=no_detach,
+        )
 
         await nordvpnlite.quit()
 
@@ -35,7 +39,11 @@ async def test_nordvpnlite_logs() -> None:
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
 
-        nordvpnlite = await NordVpnLite.new(exit_stack, connection=connection)
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=nordvpnlite_configs[IfcConfigName.DEFAULT],
+            connection=connection,
+        )
         async with nordvpnlite.start():
             await nordvpnlite.wait_for_telio_running_status()
 
@@ -59,19 +67,21 @@ async def test_nordvpnlite_logs() -> None:
 
 
 @pytest.mark.parametrize(
-    "config_type",
-    [(IfcConfigType.MANUAL), (IfcConfigType.IPROUTE)],
+    "config_name",
+    [(IfcConfigName.MANUAL), (IfcConfigName.IPROUTE)],
 )
-async def test_nordvpnlite_vpn_connection(config_type: IfcConfigType) -> None:
+async def test_nordvpnlite_vpn_connection(config_name: IfcConfigName) -> None:
     async with AsyncExitStack() as exit_stack:
-        nordvpnlite = await NordVpnLite.new(exit_stack, config_type)
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack, nordvpnlite_configs[config_name], config_name
+        )
         await nordvpnlite.request_credentials_from_core()
 
         async with nordvpnlite.start():
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
 
-            if config_type == IfcConfigType.MANUAL:
+            if config_name == IfcConfigName.MANUAL:
                 await exit_stack.enter_async_context(
                     nordvpnlite.setup_interface(vpn_routes=True)
                 )
@@ -86,14 +96,16 @@ async def test_nordvpnlite_vpn_connection(config_type: IfcConfigType) -> None:
 @pytest.mark.parametrize(
     "country",
     [
-        (IfcConfigType.VPN_COUNTRY_PL),
-        (IfcConfigType.VPN_COUNTRY_DE),
-        (IfcConfigType.VPN_COUNTRY_EMPTY),
+        (IfcConfigName.VPN_COUNTRY_PL),
+        (IfcConfigName.VPN_COUNTRY_DE),
+        (IfcConfigName.VPN_COUNTRY_EMPTY),
     ],
 )
-async def test_nordvpnlite_vpn_country_connection(country: IfcConfigType) -> None:
+async def test_nordvpnlite_vpn_country_connection(country: IfcConfigName) -> None:
     async with AsyncExitStack() as exit_stack:
-        nordvpnlite = await NordVpnLite.new(exit_stack, country, vpn_public_key=None)
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack, nordvpnlite_configs[country], country
+        )
         await nordvpnlite.request_credentials_from_core()
 
         async with nordvpnlite.start():
@@ -105,10 +117,10 @@ async def test_nordvpnlite_vpn_country_connection(country: IfcConfigType) -> Non
 
             report = await nordvpnlite.get_status()
 
-            if country is not IfcConfigType.VPN_COUNTRY_EMPTY:
+            if country is not IfcConfigName.VPN_COUNTRY_EMPTY:
                 expected_server_ip, expected_hostname = (
                     (WG_SERVER["ipv4"], "pl128.nordvpn.com")
-                    if country == IfcConfigType.VPN_COUNTRY_PL
+                    if country == IfcConfigName.VPN_COUNTRY_PL
                     else (WG_SERVER_2["ipv4"], "de1263.nordvpn.com")
                 )
 
@@ -140,7 +152,11 @@ async def test_nordvpnlite_config_created(
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
 
-        nordvpnlite = await NordVpnLite.new(exit_stack, connection=connection)
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=nordvpnlite_configs[IfcConfigName.DEFAULT],
+            connection=connection,
+        )
 
         await nordvpnlite.remove_config(config_path)
         assert not await nordvpnlite.config_exists(config_path)
