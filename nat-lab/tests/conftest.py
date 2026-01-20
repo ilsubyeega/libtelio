@@ -11,6 +11,7 @@ import shutil
 import ssl
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -810,21 +811,30 @@ async def start_windows_vms_resource_monitoring():
             start_windows_vm_cpu_monitoring(vm_tag)
             start_windows_vm_memory_monitoring(vm_tag)
             start_windows_vm_top10_cpu_usage_monitoring(vm_tag)
+            start_windows_vm_top10_memory_usage_monitoring(vm_tag)
 
 
-def start_windows_vm_top10_cpu_usage_monitoring(vm_tag: ConnectionTag):
+def start_windows_vm_top10_cpu_usage_monitoring(vm_tag):
+    powershell_cmd = """
+    Get-Counter '\Process(*)\% Processor Time' -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty CounterSamples |
+    Where-Object {$_.InstanceName -ne '_total' -and $_.InstanceName -ne 'idle'} |
+    Sort-Object CookedValue -Descending |
+    Select-Object -First 10 InstanceName, @{Name='CPU%';Expression={[math]::Round($_.CookedValue,2)}}
+    """
+    start_windows_vm_top10_usage_monitoring(vm_tag, "cpu", powershell_cmd)
+
+
+def start_windows_vm_top10_memory_usage_monitoring(vm_tag):
+    powershell_cmd = "Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 10"
+    start_windows_vm_top10_usage_monitoring(vm_tag, "memory", powershell_cmd)
+
+def start_windows_vm_top10_usage_monitoring(vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str):
     def aux():
-        output_filename = f"logs/top10_cpu_usage_{vm_tag}.csv"
+        output_filename = f"logs/top10_{resource_name}_usage_{vm_tag}.csv"
         log.info(
-            "Starting VM top10 cpu monitoring for %s in %s", vm_tag, output_filename
+            "Starting VM top10 %s monitoring for %s in %s", resource_name, vm_tag, output_filename
         )
-        powershell_cmd = """
-        Get-Counter '\Process(*)\% Processor Time' |
-        Select-Object -ExpandProperty CounterSamples |
-        Where-Object {$_.InstanceName -ne '_total' -and $_.InstanceName -ne 'idle'} |
-        Sort-Object CookedValue -Descending |
-        Select-Object -First 10 InstanceName, @{Name='CPU%';Expression={[math]::Round($_.CookedValue,2)}}
-        """
         first = True
         with open(output_filename, "a", encoding="utf-8") as output_file:
             while not END_TASKS.is_set():
@@ -843,6 +853,10 @@ def start_windows_vm_top10_cpu_usage_monitoring(vm_tag: ConnectionTag):
                     capture_output=True,
                     text=True,
                 )
+                if result.returncode != 0:
+                    log.warn("powershell command for top10 %s failed on %s: %s", resource_name, vm_tag, result.stderr)
+                    time.sleep(1)
+                    continue
                 lines = result.stdout.splitlines()
                 lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[
                     1:
@@ -885,6 +899,10 @@ def start_windows_vm_monitoring(vm_tag: ConnectionTag, resource_name: str, power
                     capture_output=True,
                     text=True,
                 )
+                if result.returncode != 0:
+                    log.warn("powershell command for %s failed on %s: %s", resource_name, vm_tag, result.stderr)
+                    time.sleep(1)
+                    continue
                 lines = result.stdout.splitlines()
                 lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[
                     1:
