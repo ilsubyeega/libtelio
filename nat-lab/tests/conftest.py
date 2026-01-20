@@ -646,13 +646,6 @@ async def collect_kernel_logs(items, suffix):
                     raise e
 
 
-def pytest_collection_modifyitems(items):
-    for item in items:
-        # Apply 5 minutes timeout to windows tests (due to constant lag)
-        if item.get_closest_marker("windows"):
-            item.add_marker(pytest.mark.timeout(300))
-
-
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         if not asyncio.run(perform_setup_checks()):
@@ -816,18 +809,64 @@ async def start_windows_vms_resource_monitoring():
         if is_vm_running:
             start_windows_vm_cpu_monitoring(vm_tag)
             start_windows_vm_memory_monitoring(vm_tag)
+            start_windows_vm_top10_cpu_usage_monitoring(vm_tag)
 
 
-def start_windows_vm_monitoring(
-    vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str
-):
+def start_windows_vm_top10_cpu_usage_monitoring(vm_tag: ConnectionTag):
+    def aux():
+        output_filename = f"logs/top10_cpu_usage_{vm_tag}.csv"
+        log.info(
+            "Starting VM top10 cpu monitoring for %s in %s", vm_tag, output_filename
+        )
+        powershell_cmd = """
+        Get-Counter '\Process(*)\% Processor Time' |
+        Select-Object -ExpandProperty CounterSamples |
+        Where-Object {$_.InstanceName -ne '_total' -and $_.InstanceName -ne 'idle'} |
+        Sort-Object CookedValue -Descending |
+        Select-Object -First 10 InstanceName, @{Name='CPU%';Expression={[math]::Round($_.CookedValue,2)}}
+        """
+        first = True
+        with open(output_filename, "a", encoding="utf-8") as output_file:
+            while not END_TASKS.is_set():
+                # This command takes usually ~5s to complete, so I've decided not to add any
+                # additional explicit sleep
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        container_id(vm_tag),
+                        "python3",
+                        "/run/qga.py",
+                        "--powershell",
+                        powershell_cmd
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                lines = result.stdout.splitlines()
+                lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[
+                    1:
+                ]
+                lines = [x.strip() for x in lines if x != ""]
+                current_time_iso = datetime.now().isoformat()
+                top10 = "\n".join(lines)
+                if first:
+                    first = False
+                else:
+                    output_file.write("\n")
+                output_file.write(f"{current_time_iso}{top10}\n")
+
+    global TASKS
+    TASKS += [
+        asyncio.create_task(asyncio.to_thread(aux))
+    ]  # Storing the task to keep it alive
+
+
+def start_windows_vm_monitoring(vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str):
     def aux():
         output_filename = f"logs/{resource_name}_usage_{vm_tag}.csv"
         log.info(
-            "Starting VM %s monitoring for %s in %s",
-            resource_name,
-            vm_tag,
-            output_filename,
+            "Starting VM %s monitoring for %s in %s", resource_name, vm_tag, output_filename
         )
         with open(output_filename, "a", encoding="utf-8") as output_file:
             while not END_TASKS.is_set():
@@ -841,7 +880,7 @@ def start_windows_vm_monitoring(
                         "python3",
                         "/run/qga.py",
                         "--powershell",
-                        powershell_cmd,
+                        powershell_cmd
                     ],
                     capture_output=True,
                     text=True,
