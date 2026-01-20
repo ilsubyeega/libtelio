@@ -228,7 +228,9 @@ impl Authority for ForwardAuthority {
             // Log such errors with lower logging level
             Err(ref e)
                 if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. })
-                    && (rtype == RecordType::AAAA || rtype == RecordType::SOA) =>
+                    && (rtype == RecordType::A
+                        || rtype == RecordType::AAAA
+                        || rtype == RecordType::SOA) =>
             {
                 telio_log_debug!("DNS name resolution failed with {:?}", e);
             }
