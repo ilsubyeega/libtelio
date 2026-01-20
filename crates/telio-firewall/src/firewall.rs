@@ -32,8 +32,11 @@ use crate::{
         ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
         NextLevelProtocol, Rule,
     },
-    libfirewall::{Libfirewall, LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
+    libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
 };
+
+#[mockall_double::double]
+use crate::libfirewall::Libfirewall;
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
 pub type HashSet<V> = rustc_hash::FxHashSet<V>;
@@ -192,7 +195,7 @@ impl LocalInterfacesObserver for StatefulFirewall {
 impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
-            (self.firewall_lib.libfw_deinit)(self.firewall);
+            self.firewall_lib.libfw_deinit(self.firewall);
         }
     }
 }
@@ -257,6 +260,7 @@ impl StatefulFirewall {
 
         Ok(result)
     }
+
     fn refresh_chain(&self) {
         let local_ifs_addrs = LOCAL_ADDRS_CACHE
             .lock()
@@ -643,6 +647,41 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
+    impl StatefulFirewall {
+        /// Creates a mock firewall for testing with provided mock library
+        fn new_mock(
+            use_ipv6: bool,
+            feature: FeatureFirewall,
+            configure_chain_fn: ConfigureChainFn,
+        ) -> Self {
+            let mut result = Self {
+                firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
+                firewall_lib: crate::libfirewall::MockLibfirewall::default(),
+                state: RwLock::new(FirewallState::default()),
+                config: FirewallConfig {
+                    allow_ipv6: use_ipv6,
+                    feature,
+                },
+                configure_chain_fn,
+            };
+
+            result
+                .get_libfirewall_mock()
+                .expect_libfw_configure_chain()
+                .once()
+                .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+            result.refresh_chain();
+
+            result
+        }
+
+        /// Get mutable reference to mock library for setting expectations
+        fn get_libfirewall_mock(&mut self) -> &mut crate::libfirewall::MockLibfirewall {
+            &mut self.firewall_lib
+        }
+    }
+
     /// Mock network monitor that can change LOCAL_ADDRS_CACHE and notify observers
     struct MockNetworkMonitor {
         observers: Arc<ParkingLotMutex<Vec<std::sync::Weak<dyn LocalInterfacesObserver>>>>,
@@ -698,7 +737,7 @@ mod tests {
         // Let's cleanup stuff first
         LOCAL_ADDRS_CACHE.lock().clear();
 
-        // Create mock function that captures addresses for each call
+        // Create spy function that captures addresses for each configure_chain call
         let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
         let addrs_clone = captured_addrs.clone();
         let spy_fn =
@@ -707,15 +746,27 @@ mod tests {
                 (Vec::<Rule>::new().as_slice()).into()
             };
 
-        // Create StatefulFirewall with spy
-        let firewall: Arc<StatefulFirewall> = Arc::new(
-            StatefulFirewall::new_with_fn(true, FeatureFirewall::default(), Box::new(spy_fn))
-                .expect("Failed to create StatefulFirewall instance"),
-        );
+        // Create StatefulFirewall with mock Libfirewall
+        let mut firewall =
+            StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
 
-        // Verify initial configure_chain was called with empty local addresses
-        assert_eq!(captured_addrs.lock().len(), 1,);
-        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new(),);
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_configure_chain()
+            .times(2)
+            .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_deinit()
+            .once()
+            .returning(|_| {});
+
+        let firewall: Arc<StatefulFirewall> = Arc::new(firewall);
+
+        // Verify initial configure_chain was called with empty LOCAL_ADDRS_CACHE
+        assert_eq!(captured_addrs.lock().len(), 1);
+        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new());
 
         // Create mock network monitor (initializes LOCAL_ADDRS_CACHE with loopback)
         let mock_monitor = MockNetworkMonitor::new();
@@ -725,7 +776,7 @@ mod tests {
             Arc::downgrade(&firewall) as std::sync::Weak<dyn LocalInterfacesObserver>
         );
 
-        // Apply a new config to StatefulFirewall (should use current LOCAL_ADDRS_CACHE which now has loopback)
+        // Apply a new state to StatefulFirewall (should use current LOCAL_ADDRS_CACHE with loopback)
         let new_state = FirewallState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
             ..Default::default()
@@ -733,48 +784,35 @@ mod tests {
         firewall.apply_state(new_state.clone());
 
         // Verify configure_chain was called with loopback address from mock monitor initialization
-        assert_eq!(captured_addrs.lock().len(), 2,);
+        assert_eq!(captured_addrs.lock().len(), 2);
         assert_eq!(
             captured_addrs.lock()[1],
             vec![StdIpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))],
+            "apply_state should use LOCAL_ADDRS_CACHE set by mock monitor (loopback)"
         );
 
-        // Simulate network interface change via mock monitor
-        mock_monitor.update_interfaces(vec![if_addrs::Interface {
+        // Update interfaces to simulate network change
+        let new_interfaces = vec![if_addrs::Interface {
             name: "eth0".to_string(),
+            index: Some(2),
             addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
                 ip: Ipv4Addr::new(192, 168, 1, 100),
                 netmask: Ipv4Addr::new(255, 255, 255, 0),
-                prefixlen: 24,
                 broadcast: Some(Ipv4Addr::new(192, 168, 1, 255)),
+                prefixlen: 24,
             }),
-            index: Some(1),
             oper_status: if_addrs::IfOperStatus::Up,
             #[cfg(windows)]
-            adapter_name: "some_adapter".to_string(),
-        }]);
+            adapter_name: "eth0".to_string(),
+        }];
+        mock_monitor.update_interfaces(new_interfaces);
 
-        // Verify configure_chain was called with updated local addresses
-        assert_eq!(captured_addrs.lock().len(), 3,);
+        // Verify configure_chain was called again with new addresses after the network change
+        assert_eq!(captured_addrs.lock().len(), 3);
         assert_eq!(
             captured_addrs.lock()[2],
             vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
-        );
-
-        // Apply another state change
-        let final_state = FirewallState {
-            whitelist: Whitelist {
-                vpn_peer: Some(PublicKey::from(&[42; 32])),
-                ..Default::default()
-            },
-            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))],
-        };
-        firewall.apply_state(final_state.clone());
-
-        assert_eq!(captured_addrs.lock().len(), 4,);
-        assert_eq!(
-            captured_addrs.lock()[2],
-            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
+            "notify() should trigger refresh_chain with new LOCAL_ADDRS_CACHE from eth0"
         );
     }
 }

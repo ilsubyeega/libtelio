@@ -185,6 +185,7 @@ pub type LibfwInjectPacketCallback = ::std::option::Option<
         associated_data_len: usize,
     ),
 >;
+
 pub struct Libfirewall {
     __library: ::libloading::Library,
     pub libfw_set_log_callback:
@@ -220,17 +221,19 @@ pub struct Libfirewall {
     ) -> LibfwVerdict,
     pub libfw_deinit: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
 }
+
+#[cfg_attr(test, mockall::automock)]
 impl Libfirewall {
     pub unsafe fn new<P>(path: P) -> Result<Self, ::libloading::Error>
     where
-        P: AsRef<::std::ffi::OsStr>,
+        P: AsRef<::std::ffi::OsStr> + 'static,
     {
         let library = ::libloading::Library::new(path)?;
         Self::from_library(library)
     }
     pub unsafe fn from_library<L>(library: L) -> Result<Self, ::libloading::Error>
     where
-        L: Into<::libloading::Library>,
+        L: Into<::libloading::Library> + 'static,
     {
         let __library = library.into();
         let libfw_set_log_callback = __library.get(b"libfw_set_log_callback\0").map(|sym| *sym)?;

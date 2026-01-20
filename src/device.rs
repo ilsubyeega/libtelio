@@ -201,6 +201,7 @@ pub enum Error {
     EnsFailure(#[from] Box<EnsError>),
     #[error("Exponential backoff error {0}")]
     ExponentialBackoffError(#[from] exponential_backoff::Error),
+    #[cfg(feature = "enable_firewall")]
     #[error("Firewall init error: {0:?}")]
     FirewallError(#[from] telio_firewall::firewall::Error),
 }
