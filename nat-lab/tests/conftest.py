@@ -826,12 +826,12 @@ def start_windows_vm_top10_cpu_usage_monitoring(vm_tag):
 
 
 def start_windows_vm_top10_memory_usage_monitoring(vm_tag):
-    powershell_cmd = "Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 10"
+    powershell_cmd = "Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 10 Name, @{Name='Memory(MB)';Expression={[math]::Round(\$_.WorkingSet64/1MB,2)}}"
     start_windows_vm_top10_usage_monitoring(vm_tag, "memory", powershell_cmd)
 
 def start_windows_vm_top10_usage_monitoring(vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str):
     def aux():
-        output_filename = f"logs/top10_{resource_name}_usage_{vm_tag}.csv"
+        output_filename = f"logs/top10_{resource_name}_usage_{vm_tag}.txt"
         log.info(
             "Starting VM top10 %s monitoring for %s in %s", resource_name, vm_tag, output_filename
         )
