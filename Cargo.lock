@@ -2512,7 +2512,7 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 [[package]]
 name = "llt-proto"
 version = "0.1.0"
-source = "git+https://github.com/NordSecurity/llt-proto.git?tag=v1.0.0#4a9e79beebee837a7873636a164c88cf0971a4df"
+source = "git+https://github.com/ilsubyeega/llt-proto.git?rev=2226e2bac38ac6f3343bf551308691f378608cd5#2226e2bac38ac6f3343bf551308691f378608cd5"
 dependencies = [
  "anyhow",
  "prost",
@@ -3460,9 +3460,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.105"
+version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
+checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]

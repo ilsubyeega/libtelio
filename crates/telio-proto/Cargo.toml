@@ -11,7 +11,7 @@ enable_ens = ["rustls/aws_lc_rs", "dep:aws-lc-rs", "dep:rustls-webpki"]
 
 [dependencies]
 http = "1.4.0"
-llt-proto = { git = "https://github.com/NordSecurity/llt-proto.git", tag = "v1.0.0" }
+llt-proto = { git = "https://github.com/ilsubyeega/llt-proto.git", rev = "2226e2bac38ac6f3343bf551308691f378608cd5" }
 hyper-util.workspace = true
 prost = "0.14.1"
 protobuf = "3.7.2"
